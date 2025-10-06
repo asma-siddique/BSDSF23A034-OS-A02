@@ -1,61 +1,32 @@
-# OS Assignment Report
+# LS Assignment Report – Column Display Feature
 
-## 1. Difference between stat() and lstat()
+## 1. General Logic for "Down Then Across" Columnar Format
 
-The crucial difference between stat() and lstat() is how they handle **symbolic links**:
+- Goal: Display a list of filenames in multiple columns, filling each column **top to bottom** before moving to the next column.
+- Why not a single loop?
+  - A single loop prints filenames sequentially, which results in a **row-wise** layout, not **column-wise**.
+  - To achieve "down then across," we need to calculate **rows and columns** and iterate **row by row**, selecting items from each column.
 
-- stat(path, &statbuf)  
-  Follows the symbolic link and returns information about the **target file**.
-  
-- lstat(path, &statbuf)  
-  Returns information about the **link itself**, not the target file.
+**Algorithm:**
+1. Determine number of columns: `columns = terminal_width / (max_filename_length + padding)`
+2. Determine number of rows: `rows = ceil(total_files / columns)`
+3. For each row `r` (0 to rows-1):
+   - For each column `c` (0 to columns-1):
+     - Compute index: `index = c * rows + r`
+     - Print `filenames[index]` padded to column width
+4. Move to next line after printing each row
 
-**In the context of ls:**  
-- Use lstat() when you want to list symbolic links themselves (e.g., show that a file is a symlink and its permissions) rather than the file they point to.
+This ensures each column is **vertically filled** before moving to the next column.
 
----
+## 2. Purpose of the `ioctl` System Call
 
-## 2. Using st_mode to determine file type and permissions
+- `ioctl` with `TIOCGWINSZ` is used to **detect the terminal size dynamically** (width and height)
+- Purpose in ls column display:
+  - Allows the program to calculate **how many columns fit** based on terminal width
+  - Ensures filenames are printed in **readable, aligned columns** regardless of terminal size
 
-The st_mode field in struct stat contains **both file type and permission bits**.
-
-### 2.1 Extracting file type
-
-Use bitwise AND & with macros like S_IFDIR, S_IFREG, etc.:
-
-```c
-if ((statbuf.st_mode & S_IFMT) == S_IFDIR) {
-    printf("It's a directory\n");
-} else if ((statbuf.st_mode & S_IFMT) == S_IFREG) {
-    printf("It's a regular file\n");
-}
-```
-
-Here, S_IFMT is a **mask for the file type bits**.
-
-### 2.2 Extracting permission bits
-
-Use bitwise AND & with macros like S_IRUSR, S_IWUSR, S_IXUSR (read, write, execute permissions for the user):
-
-```c
-if (statbuf.st_mode & S_IRUSR) {
-    printf("User can read this file\n");
-}
-if (statbuf.st_mode & S_IWUSR) {
-    printf("User can write this file\n");
-}
-if (statbuf.st_mode & S_IXUSR) {
-    printf("User can execute this file\n");
-}
-```
-
-> You can similarly check group (S_IRGRP, S_IWGRP, S_IXGRP) and others (S_IROTH, etc.).
-
----
-
-## References
-
-- man 2 stat
-- man 2 lstat
-- man 7 inode
+**Limitations of using a fixed width (e.g., 80 columns):**
+1. If terminal is wider than 80 columns, space is wasted
+2. If terminal is narrower than 80 columns, filenames may wrap incorrectly, breaking alignment
+3. Layout is non-adaptive, reducing usability
 
