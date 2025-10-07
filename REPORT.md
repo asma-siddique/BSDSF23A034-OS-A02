@@ -1,109 +1,84 @@
-REPORT.md Answers
-Feature v1.1.0 – Long Listing Format
+cat << 'EOF' > REPORT.md
+# REPORT.md - LS Assignment
 
-Q1: Difference between stat() and lstat()
-A:
+---
 
-stat() retrieves information about a file. If the file is a symbolic link, it returns info about the target file, not the link itself.
+## Feature v1.1.0 – Long Listing Format
 
-lstat() retrieves info about the link itself if the file is a symbolic link.
+**Q1: Difference between stat() and lstat()**  
+- `stat()` returns info about the target file; `lstat()` returns info about the link itself.  
+- In `ls`, use `lstat()` to correctly display symbolic links.
 
-In ls, lstat() is preferred to correctly display symbolic links as links.
+**Q2: Extracting file type and permissions from st_mode**  
+- File type: `(st_mode & S_IFMT)` with `S_IFDIR`, `S_IFREG`, etc.  
+- Permissions: `(st_mode & S_IRUSR)`, `(st_mode & S_IWUSR)`, `(st_mode & S_IXUSR)`, etc.
 
-Q2: How to extract file type and permissions from st_mode
-A:
+---
 
-Use macros like S_IFDIR, S_IFREG with st_mode & S_IFMT to determine file type.
+## Feature v1.2.0 – Column Display (Down Then Across)
 
-Use permission macros: S_IRUSR, S_IWUSR, S_IXUSR, etc., with bitwise AND (&) to check read/write/execute permissions for user, group, and others.
+**Q1: "Down then across" logic**  
+- Files arranged row by row, then across columns: `filename[row + column*num_rows]`.  
 
-Feature v1.2.0 – Column Display (Down Then Across)
+**Q2: Purpose of ioctl()**  
+- `ioctl()` with `TIOCGWINSZ` gets terminal width.  
+- Determines number of columns that fit; fallback width (e.g., 80) is less adaptive.
 
-Q1: Explain "down then across" printing logic
-A:
+---
 
-Files are arranged in rows first, then columns.
+## Feature v1.3.0 – Horizontal Column Display (-x)
 
-Iterate row by row, not by simple index, using formula:
-filename[row + column*num_rows]
+**Q1: Vertical vs Horizontal complexity**  
+- Vertical requires pre-calculating rows and indexing.  
+- Horizontal (-x) simpler: left-to-right printing, wrap when width exceeded.
 
-This ensures vertical alignment across columns.
+**Q2: Managing display mode**  
+- Use a flag (int or enum) to track mode: default, -l, -x.  
+- Call corresponding function based on flag.
 
-Q2: Purpose of ioctl() and terminal width detection
-A:
+---
 
-ioctl() with TIOCGWINSZ gets the terminal width.
+## Feature v1.4.0 – Alphabetical Sort
 
-Terminal width is needed to calculate how many columns can fit.
+**Q1: Why read all entries into memory**  
+- Sorting needs access to all filenames.  
+- `qsort()` operates on an array; streaming can't sort.  
+- Drawback: high memory usage for very large directories.
 
-Without it, layout could overflow or look unaligned; fallback width (like 80) is less adaptive.
+**Q2: qsort() comparison function**  
+- Takes two `const void*`, cast to `char**`.  
+- Compare strings with `strcmp()`.  
+- Return negative, 0, or positive for sorting order.
 
-Feature v1.3.0 – Horizontal Column Display (-x)
+---
 
-Q1: Compare vertical vs horizontal logic complexity
-A:
+## Feature v1.5.0 – Colorized Output
 
-Vertical ("down then across") requires pre-calculating rows, iterating row-wise, and careful indexing.
+**Q1: How ANSI escape codes work**  
+- Sequences like `\033[0;32m` set color.  
+- Reset with `\033[0m`.  
+- Example: `printf("\033[0;32m%s\033[0m\n", filename);` prints green.
 
-Horizontal (-x) is simpler: just print left to right, wrap line when width is exceeded.
+**Q2: Determining executables in st_mode**  
+- Check `S_IXUSR`, `S_IXGRP`, `S_IXOTH`.  
+- Executable if any of these bits are set.
 
-Q2: How display mode is managed
-A:
+---
 
-Use a flag (int or enum) to track display mode: default, -l, or -x.
+## Feature v1.6.0 – Recursive Listing (-R)
 
-Based on flag, call the corresponding display function in do_ls().
+**Q1: Base case in recursion**  
+- Stops recursion to prevent infinite calls.  
+- Base case: no subdirectories or all are `.` or `..`.
 
-Feature v1.4.0 – Alphabetical Sort
+**Q2: Why full path construction is essential**  
+- Recursive calls need `"parent_dir/subdir"`.  
+- Calling just `"subdir"` may fail if CWD differs.
 
-Q1: Why read all directory entries into memory?
-A:
+EOF
 
-Sorting requires access to all filenames simultaneously.
+# Add, commit, and push to GitHub
+git add REPORT.md
+git commit -m "docs: Added complete REPORT.md with answers for all features"
+git push origin main
 
-qsort() operates on an array; streaming entries one by one cannot be sorted.
-
-Drawback: high memory usage for directories with millions of files.
-
-Q2: How qsort() comparison function works
-A:
-
-Takes two const void* pointers.
-
-Cast to char** and use strcmp() to compare strings.
-
-Returns negative, zero, or positive for sorting order.
-
-Feature v1.5.0 – Colorized Output
-
-Q1: How ANSI escape codes work
-A:
-
-Terminal interprets sequences like \033[0;32m to set color/style.
-
-After printing text, reset to default with \033[0m.
-
-Example: green text → printf("\033[0;32m%s\033[0m\n", filename);
-
-Q2: Which st_mode bits determine executables
-A:
-
-Check S_IXUSR, S_IXGRP, S_IXOTH for owner, group, and others.
-
-File is executable if any of these bits are set.
-
-Feature v1.6.0 – Recursive Listing (-R)
-
-Q1: What is a base case in recursion?
-A:
-
-Base case stops recursion to prevent infinite calls.
-
-In do_ls(), the base case is when a directory has no subdirectories or all subdirectories are . or ...
-
-Q2: Why full path construction is essential
-A:
-
-Recursive calls must know the complete path: "parent_dir/subdir".
-
-Calling just do_ls("subdir") would fail if the current working directory is different.
