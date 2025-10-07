@@ -1,123 +1,153 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <dirent.h>
 #include <string.h>
-#include <unistd.h>
-#include <stdbool.h>
+#include <dirent.h>
 #include <sys/stat.h>
 #include <pwd.h>
 #include <grp.h>
 #include <time.h>
+#include <unistd.h>
 
-// Function declarations
-void simple_display(const char *path);
-void handle_long_listing(const char *path);
-void print_permissions(mode_t mode);
+#define MAX_NAME_LEN 256
 
-int main(int argc, char *argv[]) {
-    int opt;
-    bool long_listing = false; // for -l option
+// -------------------------
+// Feature 5: Alphabetical sort comparison
+int compare_filenames(const void *a, const void *b) {
+    const char *str1 = *(const char **)a;
+    const char *str2 = *(const char **)b;
+    return strcmp(str1, str2);
+}
 
-    // Parse command-line options
-    while ((opt = getopt(argc, argv, "l")) != -1) {
-        switch (opt) {
-            case 'l':
-                long_listing = true;
-                break;
-            default:
-                fprintf(stderr, "Usage: %s [-l] [directory]\n", argv[0]);
-                return 1;
+// -------------------------
+// Feature 1 & 3: Read directory and store filenames dynamically
+char **read_directory(const char *path, int *count) {
+    DIR *dir = opendir(path);
+    if (!dir) {
+        perror("opendir");
+        exit(EXIT_FAILURE);
+    }
+
+    struct dirent *entry;
+    int capacity = 10;
+    int n = 0;
+    char **files = malloc(sizeof(char *) * capacity);
+    if (!files) {
+        perror("malloc");
+        exit(EXIT_FAILURE);
+    }
+
+    while ((entry = readdir(dir)) != NULL) {
+        if (n >= capacity) {
+            capacity *= 2;
+            files = realloc(files, sizeof(char *) * capacity);
+            if (!files) {
+                perror("realloc");
+                exit(EXIT_FAILURE);
+            }
         }
+        files[n++] = strdup(entry->d_name);
     }
-
-    // Determine directory to list
-    const char *path = (optind < argc) ? argv[optind] : ".";
-
-    if (long_listing)
-        handle_long_listing(path);
-    else
-        simple_display(path);
-
-    return 0;
-}
-
-// ✅ Basic version: just print file names
-void simple_display(const char *path) {
-    DIR *dir = opendir(path);
-    if (!dir) {
-        perror("opendir");
-        return;
-    }
-
-    struct dirent *entry;
-    while ((entry = readdir(dir)) != NULL) {
-        if (entry->d_name[0] != '.') // skip hidden files
-            printf("%s  ", entry->d_name);
-    }
-    printf("\n");
     closedir(dir);
+
+    // -------------------------
+    // Feature 5: Sort alphabetically
+    qsort(files, n, sizeof(char *), compare_filenames);
+
+    *count = n;
+    return files;
 }
 
-// ✅ Convert st_mode into rwxrwxrwx string
-void print_permissions(mode_t mode) {
-    printf( (S_ISDIR(mode)) ? "d" : "-");
-    printf( (mode & S_IRUSR) ? "r" : "-");
-    printf( (mode & S_IWUSR) ? "w" : "-");
-    printf( (mode & S_IXUSR) ? "x" : "-");
-    printf( (mode & S_IRGRP) ? "r" : "-");
-    printf( (mode & S_IWGRP) ? "w" : "-");
-    printf( (mode & S_IXGRP) ? "x" : "-");
-    printf( (mode & S_IROTH) ? "r" : "-");
-    printf( (mode & S_IWOTH) ? "w" : "-");
-    printf( (mode & S_IXOTH) ? "x" : "-");
-}
+// -------------------------
+// Feature 1: Default column display (down then across)
+void print_default(char **files, int n) {
+    int columns = 3; // adjust as needed
+    int rows = (n + columns - 1) / columns;
 
-// ✅ Long listing: stat(), getpwuid(), getgrgid(), ctime()
-void handle_long_listing(const char *path) {
-    DIR *dir = opendir(path);
-    if (!dir) {
-        perror("opendir");
-        return;
+    for (int r = 0; r < rows; r++) {
+        for (int c = 0; c < columns; c++) {
+            int index = c * rows + r;
+            if (index < n)
+                printf("%-25s", files[index]);
+        }
+        printf("\n");
     }
+}
 
-    struct dirent *entry;
-    struct stat fileStat;
-    char fullPath[1024];
+// -------------------------
+// Feature 2: Horizontal display (-x)
+void print_horizontal(char **files, int n) {
+    int columns = 3; // adjust as needed
+    for (int i = 0; i < n; i++) {
+        printf("%-25s", files[i]);
+        if ((i + 1) % columns == 0)
+            printf("\n");
+    }
+    if (n % columns != 0) printf("\n");
+}
 
-    while ((entry = readdir(dir)) != NULL) {
-        if (entry->d_name[0] == '.')
-            continue; // skip hidden
+// -------------------------
+// Feature 1: Long listing (-l)
+void print_long_format(char **files, int n) {
+    struct stat st;
+    char buf[1024];
 
-        snprintf(fullPath, sizeof(fullPath), "%s/%s", path, entry->d_name);
-
-        if (lstat(fullPath, &fileStat) == -1) {
-            perror("lstat");
+    for (int i = 0; i < n; i++) {
+        if (stat(files[i], &st) == -1) {
+            perror("stat");
             continue;
         }
 
-        // Permissions
-        print_permissions(fileStat.st_mode);
-        printf(" ");
+        printf( (S_ISDIR(st.st_mode)) ? "d" : "-");
+        printf( (st.st_mode & S_IRUSR) ? "r" : "-");
+        printf( (st.st_mode & S_IWUSR) ? "w" : "-");
+        printf( (st.st_mode & S_IXUSR) ? "x" : "-");
+        printf( (st.st_mode & S_IRGRP) ? "r" : "-");
+        printf( (st.st_mode & S_IWGRP) ? "w" : "-");
+        printf( (st.st_mode & S_IXGRP) ? "x" : "-");
+        printf( (st.st_mode & S_IROTH) ? "r" : "-");
+        printf( (st.st_mode & S_IWOTH) ? "w" : "-");
+        printf( (st.st_mode & S_IXOTH) ? "x" : "-");
 
-        // Link count
-        printf("%2ld ", fileStat.st_nlink);
+        printf(" %2ld", st.st_nlink);
 
-        // Owner name
-        struct passwd *pw = getpwuid(fileStat.st_uid);
-        struct group *gr = getgrgid(fileStat.st_gid);
-        printf("%s %s ", pw ? pw->pw_name : "?", gr ? gr->gr_name : "?");
+        struct passwd *pw = getpwuid(st.st_uid);
+        struct group  *gr = getgrgid(st.st_gid);
+        printf(" %-8s %-8s", pw ? pw->pw_name : "?", gr ? gr->gr_name : "?");
 
-        // File size
-        printf("%5ld ", fileStat.st_size);
+        printf(" %6lld", (long long)st.st_size);
 
-        // Modification time
-        char *time_str = ctime(&fileStat.st_mtime);
-        time_str[strlen(time_str) - 1] = '\0'; // remove newline
-        printf("%s ", time_str);
+        struct tm *tm_info = localtime(&st.st_mtime);
+        strftime(buf, sizeof(buf), "%b %d %H:%M", tm_info);
+        printf(" %s %s\n", buf, files[i]);
+    }
+}
 
-        // File name
-        printf("%s\n", entry->d_name);
+// -------------------------
+// Main function
+int main(int argc, char *argv[]) {
+    int flag_l = 0, flag_x = 0;
+
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-l") == 0)
+            flag_l = 1;
+        else if (strcmp(argv[i], "-x") == 0)
+            flag_x = 1;
     }
 
-    closedir(dir);
+    int n;
+    char **files = read_directory(".", &n);
+
+    if (flag_l)
+        print_long_format(files, n);
+    else if (flag_x)
+        print_horizontal(files, n);
+    else
+        print_default(files, n);
+
+    // Free memory
+    for (int i = 0; i < n; i++)
+        free(files[i]);
+    free(files);
+
+    return 0;
 }
